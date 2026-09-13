@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Upload</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f6f7f9; --card: #ffffff; --ink: #14171a; --muted: #5f6b7a;
+    --line: #e2e6ea; --accent: #2f6fed; --ok: #128a4d; --bad: #c0392b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171a; --card: #1d2125; --ink: #e9edf1; --muted: #9aa7b4;
+      --line: #2c333a; --accent: #5b8dff; --ok: #35c07b; --bad: #ef6b5c;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    display: flex; justify-content: center; padding: 32px 16px;
+  }
+  main { width: 100%; max-width: 620px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 24px; font-size: 14px; }
+  .card {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 12px; padding: 20px;
+  }
+  #drop {
+    border: 2px dashed var(--line); border-radius: 10px;
+    padding: 40px 20px; text-align: center; cursor: pointer;
+    transition: border-color .15s, background .15s;
+  }
+  #drop.over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+  #drop strong { display: block; margin-bottom: 4px; }
+  #drop span { color: var(--muted); font-size: 13px; }
+  input[type=text] {
+    width: 100%; padding: 10px 12px; margin-bottom: 14px;
+    border: 1px solid var(--line); border-radius: 8px;
+    background: var(--bg); color: var(--ink); font-size: 15px;
+  }
+  ul { list-style: none; padding: 0; margin: 18px 0 0; }
+  li { border-top: 1px solid var(--line); padding: 12px 0; }
+  .row { display: flex; gap: 12px; align-items: baseline; }
+  .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .size { color: var(--muted); font-size: 13px; flex-shrink: 0; }
+  .bar { height: 4px; background: var(--line); border-radius: 2px; margin-top: 8px; overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+  .done .bar i { background: var(--ok); }
+  .fail .bar i { background: var(--bad); width: 100% !important; }
+  .msg { font-size: 13px; margin-top: 6px; }
+  .fail .msg { color: var(--bad); }
+  .done .msg { color: var(--ok); }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<main>
+  <h1 id="title">Upload to my Drive</h1>
+  <p class="sub">Files go straight into the owner's Google Drive. You don't need an account.</p>
+
+  <div class="card">
+    <input type="text" id="code" class="hidden" placeholder="Access code" autocomplete="off">
+    <div id="drop">
+      <strong>Drop files here, or click to choose</strong>
+      <span id="limit"></span>
+    </div>
+    <input type="file" id="picker" multiple hidden>
+    <ul id="list"></ul>
+  </div>
+</main>
+
+<script>
+const drop = document.getElementById('drop');
+const picker = document.getElementById('picker');
+const list = document.getElementById('list');
+const codeBox = document.getElementById('code');
+let config = { maxFileBytes: Infinity, allowedExtensions: [] };
+
+function human(bytes) {
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let n = bytes, i = 0;
+  while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+  return `${n.toFixed(n < 10 && i > 0 ? 1 : 0)} ${units[i]}`;
+}
+
+fetch('/api/config').then(r => r.json()).then(c => {
+  config = c;
+  document.getElementById('title').textContent = c.title;
+  document.title = c.title;
+  if (c.requiresCode) codeBox.classList.remove('hidden');
+  const bits = [`Up to ${human(c.maxFileBytes)} per file`];
+  if (c.allowedExtensions.length) bits.push(c.allowedExtensions.join(', '));
+  document.getElementById('limit').textContent = bits.join(' · ');
+  // Remember the code so a shared link with ?code= just works.
+  const fromUrl = new URLSearchParams(location.search).get('code');
+  if (fromUrl) codeBox.value = fromUrl;
+});
+
+drop.addEventListener('click', () => picker.click());
+picker.addEventListener('change', () => { queue([...picker.files]); picker.value = ''; });
+
+['dragenter', 'dragover'].forEach(ev =>
+  drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave', 'drop'].forEach(ev =>
+  drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', e => queue([...e.dataTransfer.files]));
+
+function queue(files) {
+  files.forEach(file => upload(file, addRow(file)));
+}
+
+function addRow(file) {
+  const li = document.createElement('li');
+  li.innerHTML =
+    `<div class="row"><span class="name"></span><span class="size">${human(file.size)}</span></div>` +
+    `<div class="bar"><i></i></div><div class="msg">Waiting…</div>`;
+  li.querySelector('.name').textContent = file.name;
+  list.prepend(li);
+  return {
+    el: li,
+    progress: p => { li.querySelector('.bar i').style.width = `${p}%`; },
+    status: (text, state) => {
+      li.querySelector('.msg').textContent = text;
+      if (state) li.classList.add(state);
+    },
+  };
+}
+
+async function upload(file, row) {
+  try {
+    if (file.size > config.maxFileBytes) {
+      throw new Error(`Too large — the limit is ${human(config.maxFileBytes)}.`);
+    }
+
+    row.status('Preparing…');
+    const res = await fetch('/api/upload-url', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(codeBox.value ? { 'x-access-code': codeBox.value } : {}),
+      },
+      body: JSON.stringify({
+        name: file.name,
+        mimeType: file.type || 'application/octet-stream',
+        size: file.size,
+      }),
+    });
+
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `Server said ${res.status}.`);
+
+    // Send the bytes directly to Google — they never pass through our server.
+    await put(data.uploadUrl, file, row);
+    row.progress(100);
+    row.status('Uploaded', 'done');
+  } catch (err) {
+    row.status(err.message, 'fail');
+  }
+}
+
+function put(url, file, row) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', url, true);
+    xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+
+    xhr.upload.onprogress = e => {
+      if (!e.lengthComputable) return;
+      const pct = (e.loaded / e.total) * 100;
+      row.progress(pct);
+      row.status(`Uploading… ${pct.toFixed(0)}%`);
+    };
+
+    xhr.onload = () =>
+      (xhr.status >= 200 && xhr.status < 300)
+        ? resolve()
+        : reject(new Error(`Upload rejected by Google (${xhr.status}).`));
+    xhr.onerror = () => reject(new Error('Network error during upload.'));
+    xhr.onabort = () => reject(new Error('Upload cancelled.'));
+
+    xhr.send(file);
+  });
+}
+</script>
+</body>
+</html>

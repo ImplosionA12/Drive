@@ -1,0 +1,17 @@
+{
+  "name": "drive-upload-portal",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Public upload portal that stores files in the owner's Google Drive, charged to the owner's quota.",
+  "type": "module",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "auth": "node scripts/authorize.js",
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "dependencies": {
+    "express": "^5.2.1",
+    "dotenv": "^17.2.3"
+  }
+}
