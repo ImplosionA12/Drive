@@ -179,3 +179,42 @@ export async function listRecent(env, limit = 50) {
   );
   return body.files || [];
 }
+
+/**
+ * Upload bytes we already hold, as opposed to handing a URL to a browser.
+ * Used by the Telegram bot, which receives the file itself.
+ *
+ * Multipart is the right shape here: Telegram caps bot downloads at 20 MB, so
+ * these are always small enough to send in one request.
+ */
+export async function uploadBytes(env, { name, mimeType, bytes }) {
+  const token = await getAccessToken(env);
+  const folderId = await ensureFolder(env);
+  const boundary = `drive-${crypto.randomUUID()}`;
+  const type = mimeType || 'application/octet-stream';
+
+  const head = Buffer.from(
+    `--${boundary}\r\n` +
+    'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
+    `${JSON.stringify({ name, parents: [folderId] })}\r\n` +
+    `--${boundary}\r\n` +
+    `Content-Type: ${type}\r\n\r\n`
+  );
+  const tail = Buffer.from(`\r\n--${boundary}--\r\n`);
+  const body = Buffer.concat([head, Buffer.from(bytes), tail]);
+
+  const res = await fetch(`${UPLOAD_API}?uploadType=multipart&fields=id,name,size`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': `multipart/related; boundary=${boundary}`,
+    },
+    body,
+  });
+
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(json?.error?.message || `Drive upload failed (${res.status})`);
+  }
+  return { id: json.id, name: json.name, folderId };
+}

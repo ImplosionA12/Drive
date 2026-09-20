@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Drive uploads</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg:#f6f7f9; --card:#fff; --ink:#14171a; --muted:#5f6b7a;
+    --line:#e2e6ea; --accent:#2f6fed; --ok:#128a4d; --bad:#c0392b; --warn:#b7791f;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#14171a; --card:#1d2125; --ink:#e9edf1; --muted:#9aa7b4;
+            --line:#2c333a; --accent:#5b8dff; --ok:#35c07b; --bad:#ef6b5c; --warn:#e0a94a; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); padding:32px 16px;
+         font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  main { max-width:900px; margin:0 auto; }
+  h1 { font-size:22px; margin:0 0 20px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px;
+          padding:20px; margin-bottom:16px; }
+  input { padding:10px 12px; border:1px solid var(--line); border-radius:8px;
+          background:var(--bg); color:var(--ink); font-size:15px; width:100%; max-width:280px; }
+  button { padding:10px 18px; border:0; border-radius:8px; background:var(--accent);
+           color:#fff; font-size:15px; cursor:pointer; margin-left:8px; }
+  .stats { display:flex; gap:24px; flex-wrap:wrap; }
+  .stat b { display:block; font-size:24px; font-variant-numeric:tabular-nums; }
+  .stat span { color:var(--muted); font-size:13px; }
+  .meter { height:8px; background:var(--line); border-radius:4px; overflow:hidden; margin:12px 0 6px; }
+  .meter i { display:block; height:100%; background:var(--accent); }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th { text-align:left; color:var(--muted); font-weight:600; font-size:12px;
+       text-transform:uppercase; letter-spacing:.04em; padding-bottom:8px; }
+  td { padding:9px 0; border-top:1px solid var(--line); }
+  td.name { max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .pill { font-size:12px; padding:2px 8px; border-radius:20px; background:var(--line); }
+  .completed { color:var(--ok); } .failed { color:var(--bad); }
+  .pending, .uploading { color:var(--warn); }
+  .muted { color:var(--muted); }
+  .wrap { overflow-x:auto; }
+  .hidden { display:none; }
+  .err { color:var(--bad); margin-top:10px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Drive uploads</h1>
+
+  <div class="card" id="login">
+    <label for="code" class="muted">Owner code</label>
+    <div style="display:flex;margin-top:8px;">
+      <input type="password" id="code" placeholder="Owner code">
+      <button id="go">Open</button>
+    </div>
+    <div class="err hidden" id="err"></div>
+  </div>
+
+  <div id="panel" class="hidden">
+    <div class="card">
+      <div class="stats" id="stats"></div>
+      <div class="meter"><i id="meter"></i></div>
+      <div class="muted" id="quotaText"></div>
+    </div>
+    <div class="card wrap">
+      <table>
+        <thead><tr>
+          <th>File</th><th>From</th><th>Source</th>
+          <th class="num">Size</th><th class="num">When</th><th>Status</th>
+        </tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <p class="muted hidden" id="empty">No uploads yet.</p>
+    </div>
+  </div>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+function human(b) {
+  const u = ['B','KB','MB','GB','TB'];
+  let n = Number(b) || 0, i = 0;
+  while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+  return `${n.toFixed(n < 10 && i > 0 ? 1 : 0)} ${u[i]}`;
+}
+
+function ago(iso) {
+  const s = (Date.now() - new Date(iso)) / 1000;
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86400)}d ago`;
+}
+
+async function load(code) {
+  const headers = { 'x-owner-code': code };
+  const [qRes, fRes] = await Promise.all([
+    fetch('/api/quota', { headers }),
+    fetch('/api/files', { headers }),
+  ]);
+
+  if (qRes.status === 401 || fRes.status === 401) throw new Error('Wrong owner code.');
+  if (qRes.status === 404) throw new Error('Owner view is disabled. Set OWNER_CODE in .env.');
+  if (!qRes.ok || !fRes.ok) throw new Error('Could not load. Is the server running?');
+
+  const quota = await qRes.json();
+  const { uploads, totals, tracking } = await fRes.json();
+
+  const used = quota.limit ? (quota.usage / quota.limit) * 100 : 0;
+  $('meter').style.width = `${Math.min(100, used).toFixed(1)}%`;
+  $('quotaText').textContent = quota.limit
+    ? `${human(quota.usage)} of ${human(quota.limit)} used · ${human(quota.free)} free · ${quota.email}`
+    : `${human(quota.usage)} used (unlimited) · ${quota.email}`;
+
+  const web = totals.find((t) => t.source === 'web') || {};
+  const tg  = totals.find((t) => t.source === 'telegram') || {};
+  const sum = (k) => (Number(web[k]) || 0) + (Number(tg[k]) || 0);
+
+  $('stats').innerHTML = `
+    <div class="stat"><b>${sum('completed')}</b><span>files stored</span></div>
+    <div class="stat"><b>${human(sum('bytes_stored'))}</b><span>from uploads</span></div>
+    <div class="stat"><b>${Number(web.completed) || 0}</b><span>via website</span></div>
+    <div class="stat"><b>${Number(tg.completed) || 0}</b><span>via Telegram</span></div>
+    ${sum('failed') ? `<div class="stat"><b class="failed">${sum('failed')}</b><span>failed</span></div>` : ''}`;
+
+  $('rows').innerHTML = uploads.map((u) => `
+    <tr>
+      <td class="name" title="${esc(u.filename)}">${esc(u.filename)}</td>
+      <td class="muted">${esc(u.uploader_name || '—')}</td>
+      <td><span class="pill">${esc(u.source)}</span></td>
+      <td class="num">${human(u.filesize)}</td>
+      <td class="num muted">${ago(u.created_at)}</td>
+      <td class="${esc(u.status)}">${esc(u.status)}</td>
+    </tr>`).join('');
+
+  $('empty').classList.toggle('hidden', uploads.length > 0);
+  if (!tracking) {
+    $('empty').textContent = 'Upload tracking is off — set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.';
+    $('empty').classList.remove('hidden');
+  }
+}
+
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, (c) =>
+    ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+}
+
+async function open_() {
+  const code = $('code').value.trim();
+  if (!code) return;
+  try {
+    await load(code);
+    $('login').classList.add('hidden');
+    $('panel').classList.remove('hidden');
+    sessionStorage.setItem('ownerCode', code);
+    setInterval(() => load(code).catch(() => {}), 15000);
+  } catch (err) {
+    $('err').textContent = err.message;
+    $('err').classList.remove('hidden');
+  }
+}
+
+$('go').onclick = open_;
+$('code').addEventListener('keydown', (e) => { if (e.key === 'Enter') open_(); });
+
+// Convenience across refreshes; this is a private page, not a public one.
+const saved = sessionStorage.getItem('ownerCode');
+if (saved) { $('code').value = saved; open_(); }
+</script>
+</body>
+</html>

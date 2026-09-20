@@ -2,7 +2,11 @@ import 'dotenv/config';
 import express from 'express';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createResumableUpload, getQuota, listRecent, ensureFolder } from './google.js';
+import { createResumableUpload, getQuota, ensureFolder } from './google.js';
+import {
+  dbEnabled, allowUpload, beginUpload, markUploading,
+  completeUpload, failUpload, recentUploads, uploadTotals, pruneRateEvents,
+} from './db.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -10,6 +14,7 @@ const env = process.env;
 
 const PORT = Number(env.PORT || 3000);
 const MAX_FILE_BYTES = Number(env.MAX_FILE_MB || 512) * 1024 * 1024;
+const MAX_PER_HOUR = Number(env.MAX_UPLOADS_PER_HOUR || 30);
 const ACCESS_CODE = env.ACCESS_CODE || '';
 const OWNER_CODE = env.OWNER_CODE || '';
 
@@ -17,37 +22,20 @@ app.set('trust proxy', 1);
 app.use(express.json({ limit: '32kb' }));
 app.use(express.static(path.join(__dirname, '..', 'public'), { index: 'index.html' }));
 
-// ---------------------------------------------------------------------------
-// Abuse control. This endpoint is deliberately open to people with no Google
-// account, which also means it is open to the internet. These three limits are
-// what stand between "my friend can upload" and "someone filled my 15 GB".
-// ---------------------------------------------------------------------------
+const ALLOWED = (env.ALLOWED_EXTENSIONS || '')
+  .split(',').map((s) => s.trim().toLowerCase().replace(/^\./, '')).filter(Boolean);
 
-const RATE_WINDOW_MS = 60 * 60 * 1000;
-const RATE_MAX_UPLOADS = Number(env.MAX_UPLOADS_PER_HOUR || 30);
-const hits = new Map(); // ip -> number[] of timestamps
+/** Strip directories and control characters. Never trust a browser filename. */
+function safeName(raw) {
+  const base = String(raw || 'upload').split(/[\\/]/).pop();
+  return base.replace(/[\x00-\x1f\x7f]/g, '').trim().slice(0, 200) || 'upload';
+}
 
-function rateLimit(req, res, next) {
-  const ip = req.ip || 'unknown';
-  const now = Date.now();
-  const recent = (hits.get(ip) || []).filter((t) => now - t < RATE_WINDOW_MS);
-
-  if (recent.length >= RATE_MAX_UPLOADS) {
-    return res.status(429).json({
-      error: `Too many uploads from this address. Try again later.`,
-    });
-  }
-
-  recent.push(now);
-  hits.set(ip, recent);
-
-  // Opportunistic cleanup so the map does not grow without bound.
-  if (hits.size > 5000) {
-    for (const [key, times] of hits) {
-      if (!times.some((t) => now - t < RATE_WINDOW_MS)) hits.delete(key);
-    }
-  }
-  next();
+/** Express gives us an IPv6-mapped form sometimes; Postgres inet wants it clean. */
+function clientIp(req) {
+  const raw = req.ip || '';
+  const cleaned = raw.replace(/^::ffff:/, '');
+  return cleaned || null;
 }
 
 function checkAccessCode(req, res, next) {
@@ -59,43 +47,40 @@ function checkAccessCode(req, res, next) {
   next();
 }
 
-const ALLOWED = (env.ALLOWED_EXTENSIONS || '')
-  .split(',')
-  .map((s) => s.trim().toLowerCase().replace(/^\./, ''))
-  .filter(Boolean);
-
-/**
- * Strip directory components and characters that confuse Drive or the UI.
- * Never trust a filename that came from a browser.
- */
-function safeName(raw) {
-  const base = String(raw || 'upload').split(/[\\/]/).pop();
-  const cleaned = base.replace(/[\x00-\x1f\x7f]/g, '').trim().slice(0, 200);
-  return cleaned || 'upload';
+function ownerOnly(req, res, next) {
+  if (!OWNER_CODE) {
+    return res.status(404).json({ error: 'Owner view is disabled. Set OWNER_CODE to enable it.' });
+  }
+  if ((req.get('x-owner-code') || req.query.code) !== OWNER_CODE) {
+    return res.status(401).json({ error: 'Wrong or missing owner code.' });
+  }
+  next();
 }
 
 // ---------------------------------------------------------------------------
-// Public API
+// Public
 // ---------------------------------------------------------------------------
 
-// Tells the front end whether to show the access-code box, and the size cap.
 app.get('/api/config', (req, res) => {
   res.json({
     requiresCode: Boolean(ACCESS_CODE),
     maxFileBytes: MAX_FILE_BYTES,
     allowedExtensions: ALLOWED,
     title: env.SITE_TITLE || 'Upload to my Drive',
+    tracking: dbEnabled,
   });
 });
 
 /**
- * Hand back a resumable upload URL. The browser then PUTs the bytes directly
- * to Google, so nothing large ever touches this server.
+ * Validate, log the attempt, and hand back a resumable upload URL. The browser
+ * PUTs the bytes straight to Google, so file data never crosses this server.
  */
-app.post('/api/upload-url', rateLimit, checkAccessCode, async (req, res) => {
+app.post('/api/upload-url', checkAccessCode, async (req, res) => {
+  let uploadId = null;
   try {
-    const { name, mimeType, size } = req.body || {};
+    const { name, mimeType, size, uploaderName } = req.body || {};
     const bytes = Number(size);
+    const ip = clientIp(req);
 
     if (!Number.isFinite(bytes) || bytes <= 0) {
       return res.status(400).json({ error: 'A valid file size is required.' });
@@ -110,64 +95,83 @@ app.post('/api/upload-url', rateLimit, checkAccessCode, async (req, res) => {
     if (ALLOWED.length) {
       const ext = filename.includes('.') ? filename.split('.').pop().toLowerCase() : '';
       if (!ALLOWED.includes(ext)) {
-        return res.status(415).json({
-          error: `Only these file types are accepted: ${ALLOWED.join(', ')}.`,
-        });
+        return res.status(415).json({ error: `Only these file types are accepted: ${ALLOWED.join(', ')}.` });
       }
     }
 
-    // Refuse before Google does, so the visitor gets a clear message rather
-    // than a failed PUT halfway through a large upload.
+    if (!(await allowUpload(ip, MAX_PER_HOUR))) {
+      return res.status(429).json({ error: 'Too many uploads from this address. Try again later.' });
+    }
+
+    // Fail fast rather than partway through a large transfer.
     const quota = await getQuota(env);
     if (bytes > quota.free) {
-      return res.status(507).json({
-        error: "The owner's Drive does not have enough free space for this file.",
+      return res.status(507).json({ error: "The owner's Drive does not have enough free space for this file." });
+    }
+
+    if (dbEnabled) {
+      uploadId = await beginUpload({
+        filename,
+        filesize: bytes,
+        mime_type: mimeType || null,
+        uploader_name: uploaderName ? String(uploaderName).slice(0, 100) : null,
+        source: 'web',
+        client_ip: ip,
       });
     }
 
     const origin = req.get('origin') || `${req.protocol}://${req.get('host')}`;
     const uploadUrl = await createResumableUpload(env, {
-      name: filename,
-      mimeType,
-      size: bytes,
-      origin,
+      name: filename, mimeType, size: bytes, origin,
     });
 
-    res.json({ uploadUrl, name: filename });
+    if (uploadId) await markUploading(uploadId);
+    res.json({ uploadUrl, name: filename, uploadId });
   } catch (err) {
     console.error('[upload-url]', err);
+    if (uploadId) await failUpload(uploadId, err.message).catch(() => {});
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/** The browser reports the outcome so the log reflects reality. */
+app.post('/api/complete', checkAccessCode, async (req, res) => {
+  if (!dbEnabled) return res.json({ ok: true });
+  try {
+    const { uploadId, driveFileId, bytes, error } = req.body || {};
+    if (!uploadId) return res.status(400).json({ error: 'uploadId is required.' });
+
+    if (error) {
+      await failUpload(uploadId, error);
+    } else {
+      await completeUpload(uploadId, {
+        driveFileId: driveFileId || null,
+        driveFolderId: await ensureFolder(env),
+        bytes: Number(bytes) || 0,
+      });
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[complete]', err);
     res.status(500).json({ error: err.message });
   }
 });
 
 // ---------------------------------------------------------------------------
-// Owner-only views
+// Owner
 // ---------------------------------------------------------------------------
 
-function ownerOnly(req, res, next) {
-  if (!OWNER_CODE) {
-    return res.status(404).json({ error: 'Owner view is disabled. Set OWNER_CODE to enable it.' });
-  }
-  if ((req.get('x-owner-code') || req.query.code) !== OWNER_CODE) {
-    return res.status(401).json({ error: 'Wrong or missing owner code.' });
-  }
-  next();
-}
-
 app.get('/api/quota', ownerOnly, async (req, res) => {
-  try {
-    res.json(await getQuota(env));
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  try { res.json(await getQuota(env)); }
+  catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.get('/api/files', ownerOnly, async (req, res) => {
   try {
-    res.json({ files: await listRecent(env) });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+    if (!dbEnabled) return res.json({ uploads: [], totals: [], tracking: false });
+    const [uploads, totals] = await Promise.all([recentUploads(100), uploadTotals()]);
+    res.json({ uploads, totals, tracking: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // ---------------------------------------------------------------------------
@@ -183,6 +187,7 @@ if (missing.length) {
 
 app.listen(PORT, async () => {
   console.log(`\n  Upload portal running at http://localhost:${PORT}`);
+  console.log(`  Upload tracking: ${dbEnabled ? 'on (Supabase)' : 'off — set SUPABASE_* to enable'}`);
   try {
     const quota = await getQuota(env);
     const folderId = await ensureFolder(env);
@@ -198,3 +203,8 @@ app.listen(PORT, async () => {
     console.error(`  Warning: could not reach Google Drive — ${err.message}\n`);
   }
 });
+
+// Keep the rate-limit table tidy without a cron job.
+if (dbEnabled) {
+  setInterval(() => { pruneRateEvents().catch(() => {}); }, 6 * 60 * 60 * 1000).unref();
+}

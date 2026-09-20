@@ -63,6 +63,7 @@
   <p class="sub">Files go straight into the owner's Google Drive. You don't need an account.</p>
 
   <div class="card">
+    <input type="text" id="who" placeholder="Your name (optional)" autocomplete="name">
     <input type="text" id="code" class="hidden" placeholder="Access code" autocomplete="off">
     <div id="drop">
       <strong>Drop files here, or click to choose</strong>
@@ -78,6 +79,7 @@ const drop = document.getElementById('drop');
 const picker = document.getElementById('picker');
 const list = document.getElementById('list');
 const codeBox = document.getElementById('code');
+const whoBox = document.getElementById('who');
 let config = { maxFileBytes: Infinity, allowedExtensions: [] };
 
 function human(bytes) {
@@ -131,6 +133,7 @@ function addRow(file) {
 }
 
 async function upload(file, row) {
+  let uploadId;
   try {
     if (file.size > config.maxFileBytes) {
       throw new Error(`Too large — the limit is ${human(config.maxFileBytes)}.`);
@@ -147,19 +150,39 @@ async function upload(file, row) {
         name: file.name,
         mimeType: file.type || 'application/octet-stream',
         size: file.size,
+        uploaderName: whoBox.value.trim() || undefined,
       }),
     });
 
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || `Server said ${res.status}.`);
+    uploadId = data.uploadId;
 
     // Send the bytes directly to Google — they never pass through our server.
-    await put(data.uploadUrl, file, row);
+    const saved = await put(data.uploadUrl, file, row);
     row.progress(100);
     row.status('Uploaded', 'done');
+    report(uploadId, { driveFileId: saved?.id, bytes: file.size });
   } catch (err) {
     row.status(err.message, 'fail');
+    report(uploadId, { error: err.message });
   }
+}
+
+/**
+ * Tell the server how it went, so the owner's log matches reality.
+ * Best effort: a failed report must never surface as a failed upload.
+ */
+function report(uploadId, outcome) {
+  if (!uploadId) return;
+  fetch('/api/complete', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(codeBox.value ? { 'x-access-code': codeBox.value } : {}),
+    },
+    body: JSON.stringify({ uploadId, ...outcome }),
+  }).catch(() => {});
 }
 
 function put(url, file, row) {
@@ -175,10 +198,13 @@ function put(url, file, row) {
       row.status(`Uploading… ${pct.toFixed(0)}%`);
     };
 
-    xhr.onload = () =>
-      (xhr.status >= 200 && xhr.status < 300)
-        ? resolve()
-        : reject(new Error(`Upload rejected by Google (${xhr.status}).`));
+    xhr.onload = () => {
+      if (xhr.status < 200 || xhr.status >= 300) {
+        return reject(new Error(`Upload rejected by Google (${xhr.status}).`));
+      }
+      try { resolve(JSON.parse(xhr.responseText)); }
+      catch { resolve(null); }  // upload succeeded even if the body is unparseable
+    };
     xhr.onerror = () => reject(new Error('Network error during upload.'));
     xhr.onabort = () => reject(new Error('Upload cancelled.'));
 
