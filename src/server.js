@@ -4,8 +4,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createResumableUpload, getQuota, ensureFolder } from './google.js';
 import {
-  dbEnabled, allowUpload, beginUpload, markUploading,
-  completeUpload, failUpload, recentUploads, uploadTotals, pruneRateEvents,
+  dbEnabled, allowUpload, beginUpload, markUploading, saveResumeUrl,
+  updateProgress, pendingUploads, resumeTarget,
+  completeUpload, failUpload, recentUploads, uploadTotals,
+  pruneRateEvents, expireStaleUploads,
 } from './db.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -13,7 +15,7 @@ const app = express();
 const env = process.env;
 
 const PORT = Number(env.PORT || 3000);
-const MAX_FILE_BYTES = Number(env.MAX_FILE_MB || 512) * 1024 * 1024;
+const MAX_FILE_BYTES = Number(env.MAX_FILE_MB || 10240) * 1024 * 1024;
 const MAX_PER_HOUR = Number(env.MAX_UPLOADS_PER_HOUR || 30);
 const ACCESS_CODE = env.ACCESS_CODE || '';
 const OWNER_CODE = env.OWNER_CODE || '';
@@ -125,7 +127,11 @@ app.post('/api/upload-url', checkAccessCode, async (req, res) => {
       name: filename, mimeType, size: bytes, origin,
     });
 
-    if (uploadId) await markUploading(uploadId);
+    if (uploadId) {
+      await markUploading(uploadId);
+      // Persisted so the transfer survives a cleared cache or a dead laptop.
+      await saveResumeUrl(uploadId, uploadUrl);
+    }
     res.json({ uploadUrl, name: filename, uploadId });
   } catch (err) {
     console.error('[upload-url]', err);
@@ -153,6 +159,53 @@ app.post('/api/complete', checkAccessCode, async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     console.error('[complete]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/** Live byte count for a transfer in flight, so the dashboard is not blind. */
+app.post('/api/progress', checkAccessCode, async (req, res) => {
+  if (!dbEnabled) return res.json({ ok: true });
+  try {
+    const { uploadId, bytes } = req.body || {};
+    if (!uploadId) return res.status(400).json({ error: 'uploadId is required.' });
+    await updateProgress(uploadId, Number(bytes) || 0);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/** Unfinished uploads Google may still accept. No session URIs in this list. */
+app.get('/api/pending', checkAccessCode, async (req, res) => {
+  if (!dbEnabled) return res.json({ pending: [] });
+  try {
+    res.json({ pending: await pendingUploads() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * Recover a session URI. The caller must name the exact file — same filename
+ * and byte count — so holding the shared access code alone is not enough to
+ * pick up someone else's transfer.
+ */
+app.post('/api/resume', checkAccessCode, async (req, res) => {
+  if (!dbEnabled) return res.status(404).json({ error: 'Resume needs Supabase configured.' });
+  try {
+    const { uploadId, name, size } = req.body || {};
+    if (!uploadId || !name || !size) {
+      return res.status(400).json({ error: 'uploadId, name and size are required.' });
+    }
+    const uploadUrl = await resumeTarget(uploadId, {
+      filename: safeName(name), filesize: Number(size),
+    });
+    if (!uploadUrl) {
+      return res.status(404).json({ error: 'No matching resumable upload. Start it again.' });
+    }
+    res.json({ uploadUrl, uploadId });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
@@ -206,5 +259,9 @@ app.listen(PORT, async () => {
 
 // Keep the rate-limit table tidy without a cron job.
 if (dbEnabled) {
-  setInterval(() => { pruneRateEvents().catch(() => {}); }, 6 * 60 * 60 * 1000).unref();
+  const housekeeping = () => {
+    pruneRateEvents().catch(() => {});
+    expireStaleUploads().catch(() => {});
+  };
+  setInterval(housekeeping, 6 * 60 * 60 * 1000).unref();
 }

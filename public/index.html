@@ -7,54 +7,50 @@
 <style>
   :root {
     color-scheme: light dark;
-    --bg: #f6f7f9; --card: #ffffff; --ink: #14171a; --muted: #5f6b7a;
-    --line: #e2e6ea; --accent: #2f6fed; --ok: #128a4d; --bad: #c0392b;
+    --bg:#f6f7f9; --card:#fff; --ink:#14171a; --muted:#5f6b7a;
+    --line:#e2e6ea; --accent:#2f6fed; --ok:#128a4d; --bad:#c0392b; --warn:#b7791f;
   }
   @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #14171a; --card: #1d2125; --ink: #e9edf1; --muted: #9aa7b4;
-      --line: #2c333a; --accent: #5b8dff; --ok: #35c07b; --bad: #ef6b5c;
-    }
+    :root { --bg:#14171a; --card:#1d2125; --ink:#e9edf1; --muted:#9aa7b4;
+            --line:#2c333a; --accent:#5b8dff; --ok:#35c07b; --bad:#ef6b5c; --warn:#e0a94a; }
   }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0; background: var(--bg); color: var(--ink);
-    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    display: flex; justify-content: center; padding: 32px 16px;
-  }
-  main { width: 100%; max-width: 620px; }
-  h1 { font-size: 22px; margin: 0 0 4px; }
-  .sub { color: var(--muted); margin: 0 0 24px; font-size: 14px; }
-  .card {
-    background: var(--card); border: 1px solid var(--line);
-    border-radius: 12px; padding: 20px;
-  }
-  #drop {
-    border: 2px dashed var(--line); border-radius: 10px;
-    padding: 40px 20px; text-align: center; cursor: pointer;
-    transition: border-color .15s, background .15s;
-  }
-  #drop.over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
-  #drop strong { display: block; margin-bottom: 4px; }
-  #drop span { color: var(--muted); font-size: 13px; }
-  input[type=text] {
-    width: 100%; padding: 10px 12px; margin-bottom: 14px;
-    border: 1px solid var(--line); border-radius: 8px;
-    background: var(--bg); color: var(--ink); font-size: 15px;
-  }
-  ul { list-style: none; padding: 0; margin: 18px 0 0; }
-  li { border-top: 1px solid var(--line); padding: 12px 0; }
-  .row { display: flex; gap: 12px; align-items: baseline; }
-  .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .size { color: var(--muted); font-size: 13px; flex-shrink: 0; }
-  .bar { height: 4px; background: var(--line); border-radius: 2px; margin-top: 8px; overflow: hidden; }
-  .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
-  .done .bar i { background: var(--ok); }
-  .fail .bar i { background: var(--bad); width: 100% !important; }
-  .msg { font-size: 13px; margin-top: 6px; }
-  .fail .msg { color: var(--bad); }
-  .done .msg { color: var(--ok); }
-  .hidden { display: none; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+         font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+         display:flex; justify-content:center; padding:32px 16px; }
+  main { width:100%; max-width:640px; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  .sub { color:var(--muted); margin:0 0 24px; font-size:14px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:20px; }
+  #drop { border:2px dashed var(--line); border-radius:10px; padding:40px 20px;
+          text-align:center; cursor:pointer; transition:border-color .15s, background .15s; }
+  #drop.over { border-color:var(--accent); background:color-mix(in srgb, var(--accent) 8%, transparent); }
+  #drop strong { display:block; margin-bottom:4px; }
+  #drop span { color:var(--muted); font-size:13px; }
+  input[type=text] { width:100%; padding:10px 12px; margin-bottom:14px;
+                     border:1px solid var(--line); border-radius:8px;
+                     background:var(--bg); color:var(--ink); font-size:15px; }
+  ul { list-style:none; padding:0; margin:18px 0 0; }
+  li { border-top:1px solid var(--line); padding:12px 0; }
+  .row { display:flex; gap:12px; align-items:baseline; }
+  .name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .size { color:var(--muted); font-size:13px; flex-shrink:0; }
+  .x { background:none; border:0; color:var(--muted); cursor:pointer; font-size:18px;
+       line-height:1; padding:0 2px; flex-shrink:0; }
+  .x:hover { color:var(--bad); }
+  .bar { height:4px; background:var(--line); border-radius:2px; margin-top:8px; overflow:hidden; }
+  .bar i { display:block; height:100%; width:0; background:var(--accent); transition:width .2s; }
+  .done .bar i { background:var(--ok); }
+  .fail .bar i { background:var(--bad); width:100% !important; }
+  .msg { font-size:13px; margin-top:6px; color:var(--muted); }
+  #resumable { background:color-mix(in srgb, var(--warn) 12%, transparent);
+               border:1px solid color-mix(in srgb, var(--warn) 40%, transparent);
+               border-radius:8px; padding:12px 14px; margin-bottom:14px; font-size:13px; }
+  #resumable b { display:block; margin-bottom:4px; }
+  .fail .msg { color:var(--bad); }
+  .done .msg { color:var(--ok); }
+  .retrying .msg { color:var(--warn); }
+  .hidden { display:none; }
 </style>
 </head>
 <body>
@@ -65,6 +61,7 @@
   <div class="card">
     <input type="text" id="who" placeholder="Your name (optional)" autocomplete="name">
     <input type="text" id="code" class="hidden" placeholder="Access code" autocomplete="off">
+    <div id="resumable" class="hidden"></div>
     <div id="drop">
       <strong>Drop files here, or click to choose</strong>
       <span id="limit"></span>
@@ -74,105 +71,129 @@
   </div>
 </main>
 
-<script>
-const drop = document.getElementById('drop');
-const picker = document.getElementById('picker');
-const list = document.getElementById('list');
-const codeBox = document.getElementById('code');
-const whoBox = document.getElementById('who');
+<script type="module">
+import { uploadFile, chunkSize } from './uploader.js';
+
+const $ = (id) => document.getElementById(id);
+const drop = $('drop'), picker = $('picker'), list = $('list');
+const codeBox = $('code'), whoBox = $('who');
 let config = { maxFileBytes: Infinity, allowedExtensions: [] };
 
 function human(bytes) {
-  const units = ['B', 'KB', 'MB', 'GB'];
-  let n = bytes, i = 0;
-  while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
-  return `${n.toFixed(n < 10 && i > 0 ? 1 : 0)} ${units[i]}`;
+  const u = ['B','KB','MB','GB','TB'];
+  let n = Number(bytes) || 0, i = 0;
+  while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+  return `${n.toFixed(n < 10 && i > 0 ? 1 : 0)} ${u[i]}`;
 }
 
-fetch('/api/config').then(r => r.json()).then(c => {
+fetch('/api/config').then((r) => r.json()).then((c) => {
   config = c;
-  document.getElementById('title').textContent = c.title;
+  $('title').textContent = c.title;
   document.title = c.title;
   if (c.requiresCode) codeBox.classList.remove('hidden');
-  const bits = [`Up to ${human(c.maxFileBytes)} per file`];
+  const bits = [`Up to ${human(c.maxFileBytes)} per file`, `${human(chunkSize)} chunks, resumable`];
   if (c.allowedExtensions.length) bits.push(c.allowedExtensions.join(', '));
-  document.getElementById('limit').textContent = bits.join(' · ');
-  // Remember the code so a shared link with ?code= just works.
+  $('limit').textContent = bits.join(' · ');
   const fromUrl = new URLSearchParams(location.search).get('code');
   if (fromUrl) codeBox.value = fromUrl;
 });
 
 drop.addEventListener('click', () => picker.click());
-picker.addEventListener('change', () => { queue([...picker.files]); picker.value = ''; });
+picker.addEventListener('change', () => { enqueue([...picker.files]); picker.value = ''; });
+['dragenter','dragover'].forEach((e) =>
+  drop.addEventListener(e, (ev) => { ev.preventDefault(); drop.classList.add('over'); }));
+['dragleave','drop'].forEach((e) =>
+  drop.addEventListener(e, (ev) => { ev.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', (ev) => enqueue([...ev.dataTransfer.files]));
 
-['dragenter', 'dragover'].forEach(ev =>
-  drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
-['dragleave', 'drop'].forEach(ev =>
-  drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
-drop.addEventListener('drop', e => queue([...e.dataTransfer.files]));
+// One file at a time: several multi-gigabyte uploads in parallel just starve
+// each other and make every progress bar crawl.
+const queue = [];
+let busy = false;
 
-function queue(files) {
-  files.forEach(file => upload(file, addRow(file)));
+function enqueue(files) {
+  for (const file of files) queue.push({ file, ui: addRow(file) });
+  pump();
+}
+
+async function pump() {
+  if (busy) return;
+  busy = true;
+  while (queue.length) {
+    const job = queue.shift();
+    if (job.ui.cancelled) continue;
+    await run(job.file, job.ui);
+  }
+  busy = false;
 }
 
 function addRow(file) {
   const li = document.createElement('li');
   li.innerHTML =
-    `<div class="row"><span class="name"></span><span class="size">${human(file.size)}</span></div>` +
-    `<div class="bar"><i></i></div><div class="msg">Waiting…</div>`;
+    `<div class="row"><span class="name"></span><span class="size">${human(file.size)}</span>` +
+    `<button class="x" title="Cancel">&times;</button></div>` +
+    `<div class="bar"><i></i></div><div class="msg">Queued…</div>`;
   li.querySelector('.name').textContent = file.name;
   list.prepend(li);
-  return {
+
+  const controller = new AbortController();
+  const ui = {
     el: li,
-    progress: p => { li.querySelector('.bar i').style.width = `${p}%`; },
-    status: (text, state) => {
+    signal: controller.signal,
+    cancelled: false,
+    uploaderName: '',
+    onProgress(sent, total) {
+      const pct = (sent / total) * 100;
+      li.querySelector('.bar i').style.width = `${pct}%`;
+      li.classList.remove('retrying');
+      ui.onStatus(`${pct.toFixed(1)}% · ${human(sent)} of ${human(total)}`);
+    },
+    onStatus(text) {
       li.querySelector('.msg').textContent = text;
-      if (state) li.classList.add(state);
+      if (text.startsWith('Connection problem')) li.classList.add('retrying');
+    },
+    onResume(offset) {
+      ui.onStatus(`Resuming from ${human(offset)}…`);
+    },
+    onChunkDone(uploadId, sent) {
+      checkpoint(uploadId, sent);
+    },
+    finish(text, state) {
+      li.querySelector('.msg').textContent = text;
+      li.classList.add(state);
+      li.querySelector('.x').remove();
     },
   };
+
+  li.querySelector('.x').onclick = () => {
+    ui.cancelled = true;
+    controller.abort();
+    ui.finish('Cancelled', 'fail');
+  };
+  return ui;
 }
 
-async function upload(file, row) {
-  let uploadId;
+async function run(file, ui) {
+  ui.uploaderName = whoBox.value.trim();
   try {
     if (file.size > config.maxFileBytes) {
       throw new Error(`Too large — the limit is ${human(config.maxFileBytes)}.`);
     }
-
-    row.status('Preparing…');
-    const res = await fetch('/api/upload-url', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(codeBox.value ? { 'x-access-code': codeBox.value } : {}),
-      },
-      body: JSON.stringify({
-        name: file.name,
-        mimeType: file.type || 'application/octet-stream',
-        size: file.size,
-        uploaderName: whoBox.value.trim() || undefined,
-      }),
+    const result = await uploadFile(file, ui, {
+      accessCode: codeBox.value || undefined,
+      signal: ui.signal,
+      recovered: await recoverSession(file),
     });
-
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || `Server said ${res.status}.`);
-    uploadId = data.uploadId;
-
-    // Send the bytes directly to Google — they never pass through our server.
-    const saved = await put(data.uploadUrl, file, row);
-    row.progress(100);
-    row.status('Uploaded', 'done');
-    report(uploadId, { driveFileId: saved?.id, bytes: file.size });
+    ui.finish(result.resumed ? 'Uploaded (resumed)' : 'Uploaded', 'done');
+    report(result.uploadId, { driveFileId: result.id, bytes: file.size });
   } catch (err) {
-    row.status(err.message, 'fail');
-    report(uploadId, { error: err.message });
+    if (ui.cancelled) return;
+    ui.finish(err.message, 'fail');
+    report(null, { error: err.message });
   }
 }
 
-/**
- * Tell the server how it went, so the owner's log matches reality.
- * Best effort: a failed report must never surface as a failed upload.
- */
+/** Best effort: a failed report must never look like a failed upload. */
 function report(uploadId, outcome) {
   if (!uploadId) return;
   fetch('/api/complete', {
@@ -185,32 +206,82 @@ function report(uploadId, outcome) {
   }).catch(() => {});
 }
 
-function put(url, file, row) {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open('PUT', url, true);
-    xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+/**
+ * Unfinished uploads the server still has a live Google session for. Shown so
+ * someone who lost their browser (or their laptop) knows the bytes already
+ * sent are not wasted — dropping the same file picks up where it stopped.
+ */
+let pending = [];
 
-    xhr.upload.onprogress = e => {
-      if (!e.lengthComputable) return;
-      const pct = (e.loaded / e.total) * 100;
-      row.progress(pct);
-      row.status(`Uploading… ${pct.toFixed(0)}%`);
-    };
+async function loadPending() {
+  try {
+    const res = await fetch('/api/pending', {
+      headers: codeBox.value ? { 'x-access-code': codeBox.value } : {},
+    });
+    if (!res.ok) return;
+    ({ pending = [] } = await res.json());
 
-    xhr.onload = () => {
-      if (xhr.status < 200 || xhr.status >= 300) {
-        return reject(new Error(`Upload rejected by Google (${xhr.status}).`));
-      }
-      try { resolve(JSON.parse(xhr.responseText)); }
-      catch { resolve(null); }  // upload succeeded even if the body is unparseable
-    };
-    xhr.onerror = () => reject(new Error('Network error during upload.'));
-    xhr.onabort = () => reject(new Error('Upload cancelled.'));
+    const banner = $('resumable');
+    if (!pending.length) return banner.classList.add('hidden');
 
-    xhr.send(file);
-  });
+    const list = pending
+      .map((p) => `${p.filename} (${human(p.bytes_uploaded)} of ${human(p.filesize)} sent)`)
+      .join('<br>');
+    banner.innerHTML =
+      `<b>${pending.length} unfinished upload${pending.length > 1 ? 's' : ''}</b>` +
+      `${list}<br><br>Drop the same file again and it continues from where it stopped.`;
+    banner.classList.remove('hidden');
+  } catch { /* the portal works fine without this */ }
 }
+
+/** Match a freshly dropped file to a stored session by exact name and size. */
+async function recoverSession(file) {
+  const match = pending.find(
+    (p) => p.filename === file.name && Number(p.filesize) === file.size
+  );
+  if (!match) return undefined;
+
+  try {
+    const res = await fetch('/api/resume', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(codeBox.value ? { 'x-access-code': codeBox.value } : {}),
+      },
+      body: JSON.stringify({ uploadId: match.id, name: file.name, size: file.size }),
+    });
+    if (!res.ok) return undefined;
+    const data = await res.json();
+    pending = pending.filter((p) => p.id !== match.id);
+    return { uploadUrl: data.uploadUrl, uploadId: data.uploadId };
+  } catch {
+    return undefined; // fall back to starting a fresh session
+  }
+}
+
+// Checkpoint progress server-side, at most once every few seconds so a long
+// upload does not turn into a write storm.
+let lastReport = 0;
+function checkpoint(uploadId, bytes) {
+  if (!uploadId || Date.now() - lastReport < 5000) return;
+  lastReport = Date.now();
+  fetch('/api/progress', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(codeBox.value ? { 'x-access-code': codeBox.value } : {}),
+    },
+    body: JSON.stringify({ uploadId, bytes }),
+  }).catch(() => {});
+}
+
+loadPending();
+codeBox.addEventListener('change', loadPending);
+
+// A half-finished upload is resumable, but only if the user comes back.
+addEventListener('beforeunload', (e) => {
+  if (busy) { e.preventDefault(); e.returnValue = ''; }
+});
 </script>
 </body>
 </html>

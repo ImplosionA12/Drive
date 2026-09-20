@@ -57,11 +57,64 @@ export async function markUploading(id) {
   await required().from('uploads').update({ status: 'uploading' }).eq('id', id);
 }
 
+/**
+ * Persist the Google session URI so an upload survives losing the browser.
+ * Google keeps a resumable session alive for about a week.
+ */
+export async function saveResumeUrl(id, resumeUrl) {
+  const expires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+  await required()
+    .from('uploads')
+    .update({ resume_url: resumeUrl, resume_expires_at: expires })
+    .eq('id', id);
+}
+
+/** Live byte count, so the dashboard can show a transfer in flight. */
+export async function updateProgress(id, bytes) {
+  await required().from('uploads').update({ bytes_uploaded: bytes }).eq('id', id);
+}
+
+/**
+ * Unfinished uploads that Google may still accept. The session URI is
+ * deliberately withheld here — see resumeTarget().
+ */
+export async function pendingUploads(limit = 20) {
+  const { data, error } = await required()
+    .from('uploads')
+    .select('id,filename,filesize,bytes_uploaded,created_at,source')
+    .in('status', ['pending', 'uploading'])
+    .not('resume_url', 'is', null)
+    .gt('resume_expires_at', new Date().toISOString())
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+/**
+ * Hand back a session URI only to a caller that already knows exactly which
+ * file it is — same name, same byte count. Stops one uploader idly resuming
+ * somebody else's transfer just by holding the shared access code.
+ */
+export async function resumeTarget(id, { filename, filesize }) {
+  const { data, error } = await required()
+    .from('uploads')
+    .select('id,filename,filesize,resume_url,resume_expires_at,status')
+    .eq('id', id)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data || !data.resume_url) return null;
+  if (data.filename !== filename || Number(data.filesize) !== Number(filesize)) return null;
+  if (new Date(data.resume_expires_at) < new Date()) return null;
+  return data.resume_url;
+}
+
 export async function completeUpload(id, { driveFileId, driveFolderId, bytes }) {
   const { error } = await required()
     .from('uploads')
     .update({
       status: 'completed',
+      resume_url: null,
       drive_file_id: driveFileId,
       drive_folder_id: driveFolderId,
       bytes_uploaded: bytes,
@@ -124,6 +177,14 @@ export async function setTelegramName(telegramUserId, name) {
 export async function pruneRateEvents() {
   if (!dbEnabled) return 0;
   const { data, error } = await db.rpc('prune_rate_events');
+  if (error) return 0;
+  return data ?? 0;
+}
+
+/** Mark uploads whose Google session has aged out as failed. */
+export async function expireStaleUploads() {
+  if (!dbEnabled) return 0;
+  const { data, error } = await db.rpc('expire_stale_uploads');
   if (error) return 0;
   return data ?? 0;
 }
