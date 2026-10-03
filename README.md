@@ -26,7 +26,7 @@ Two ways in, one Drive, one log. The dashboard shows both sources together.
 
 | | Website | Telegram bot |
 |---|---|---|
-| Max file size | **512 MB** (configurable) | **20 MB** — Telegram's own cap on bots |
+| Max file size | **10 GB** (configurable) | **20 MB** — Telegram's own cap on bots |
 | Bytes travel | browser → Google directly | Telegram → your server → Google |
 | Best for | big files, anyone with a link | quick phone photos, people already in Telegram |
 | Run with | `npm start` | `npm run bot` |
@@ -111,7 +111,7 @@ by source, and the last 100 uploads with who sent each one. Refreshes every 15s.
 |---|---|---|
 | `ACCESS_CODE` | *(blank)* | Visitors must enter this. Blank = anyone with the link can upload. Share as `https://yoursite/?code=xxxx`. |
 | `OWNER_CODE` | *(blank)* | Unlocks the dashboard. Blank keeps it disabled. |
-| `MAX_FILE_MB` | `512` | Per-file cap (website). |
+| `MAX_FILE_MB` | `10240` | Per-file cap (website). |
 | `MAX_UPLOADS_PER_HOUR` | `30` | Per-IP cap, enforced in Postgres. |
 | `ALLOWED_EXTENSIONS` | *(blank)* | e.g. `pdf,png,jpg`. Blank allows anything. |
 | `DRIVE_FOLDER_NAME` | `Shared Uploads` | Folder created in your Drive root. |

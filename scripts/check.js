@@ -77,7 +77,7 @@ env.ACCESS_CODE ? ok('ACCESS_CODE set — uploads need the code')
          'Set it before putting this on the public internet');
 env.OWNER_CODE ? ok('OWNER_CODE set — /dashboard.html available')
   : warn('OWNER_CODE blank — dashboard disabled', 'Set it to use /dashboard.html');
-ok(`Max file size ${env.MAX_FILE_MB || 512} MB`);
+ok(`Max file size ${env.MAX_FILE_MB || 10240} MB`);
 ok(`Max ${env.MAX_UPLOADS_PER_HOUR || 30} uploads per hour per IP`);
 
 console.log(fatal

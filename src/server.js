@@ -134,9 +134,10 @@ app.post('/api/upload-url', checkAccessCode, async (req, res) => {
     }
     res.json({ uploadUrl, name: filename, uploadId });
   } catch (err) {
-    console.error('[upload-url]', err);
+    if (err.status === 502) console.error('[upload-url]', err.message);
+    else console.error('[upload-url]', err);
     if (uploadId) await failUpload(uploadId, err.message).catch(() => {});
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({ error: err.message });
   }
 });
 
@@ -216,7 +217,7 @@ app.post('/api/resume', checkAccessCode, async (req, res) => {
 
 app.get('/api/quota', ownerOnly, async (req, res) => {
   try { res.json(await getQuota(env)); }
-  catch (err) { res.status(500).json({ error: err.message }); }
+  catch (err) { res.status(err.status || 500).json({ error: err.message }); }
 });
 
 app.get('/api/files', ownerOnly, async (req, res) => {

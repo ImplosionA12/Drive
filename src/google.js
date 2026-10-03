@@ -38,12 +38,14 @@ export async function getAccessToken(env) {
   if (!res.ok) {
     // invalid_grant almost always means the refresh token was revoked or the
     // OAuth app is still in "Testing" mode, where tokens die after 7 days.
-    throw new Error(
+    const err = new Error(
       `Could not refresh the owner's Google token (${res.status} ${body.error || ''}). ` +
       `Re-run "npm run auth". If this keeps happening every week, publish your ` +
       `OAuth consent screen to "In production" — refresh tokens expire after 7 ` +
       `days while it is in "Testing".`
     );
+    err.status = 502;
+    throw err;
   }
 
   cachedToken = {
